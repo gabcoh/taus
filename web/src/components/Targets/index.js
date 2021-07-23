@@ -37,10 +37,10 @@ export default function Targets() {
                 Header: "Regex",
                 accessor: "regex",
             },
-	    {
-		Header: "Latest",
-		accessor: "latest"
-	    }
+            {
+                Header: "Latest",
+                accessor: "latest",
+            },
         ],
         []
     );
@@ -140,8 +140,8 @@ export default function Targets() {
                                                     placeholder="app-name-("
                                                 />
                                                 <BS.Form.Control.Feedback type="invalid">
-						    {`${errors.regex}`}
-						</BS.Form.Control.Feedback>
+                                                    {`${errors.regex}`}
+                                                </BS.Form.Control.Feedback>
                                             </BS.Form.Group>
                                             <BS.Form.Group>
                                                 <BS.Form.Control
