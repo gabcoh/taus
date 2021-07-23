@@ -25,6 +25,15 @@ pub fn get_targets(conn: &diesel::SqliteConnection) -> Result<Vec<models::Target
     use self::schema::targets::dsl::*;
     targets.get_results(conn)
 }
+pub fn get_target_by_name(
+    conn: &diesel::SqliteConnection,
+    name: String,
+) -> Result<models::Target, Error> {
+    use self::schema::targets;
+    targets::dsl::targets
+        .filter(targets::dsl::target.eq(name))
+        .first(conn)
+}
 
 pub fn create_target(
     conn: &diesel::SqliteConnection,
@@ -54,29 +63,87 @@ pub fn get_mappings(
 }
 pub fn create_mapping(
     conn: &diesel::SqliteConnection,
-    mapping: models::TargetVersionMapping
+    mapping: models::TargetVersionMapping,
 ) -> Result<(), Error> {
-    use self::schema::target_version_mappings;
-    diesel::insert_into(target_version_mappings::table)
-	.values(mapping)
-	.execute(conn)
-	.map(|_r| ())
+    use self::schema::{target_version_mappings, targets};
+    conn.transaction::<_, Error, _>(|| {
+        let mut target: models::Target = targets::dsl::targets
+            .filter(targets::dsl::id.eq(mapping.target_id))
+            .first(conn)?;
+        match target.latest {
+            Some(ref vers) => {
+                if vers.0 < mapping.current_version.0 {
+                    target.latest = Some(mapping.current_version.clone());
+                }
+            }
+            None => {
+                target.latest = Some(mapping.current_version.clone());
+            }
+        }
+        target.save_changes(conn).map(|r| {
+            let _annotation: models::Target = r;
+            ()
+        })?;
+        diesel::insert_into(target_version_mappings::table)
+            .values(mapping)
+            .execute(conn)
+            .map(|_r| ())
+    })
 }
 pub fn get_mapping(
     conn: &diesel::SqliteConnection,
     target_id: i32,
-    current_version: models::SemVer
+    current_version: models::SemVer,
 ) -> Result<Option<models::TargetVersionMapping>, Error> {
     use self::schema::target_version_mappings::dsl;
-    dsl::target_version_mappings.filter(dsl::target_id.eq(target_id).and(dsl::current_version.eq(current_version)))
-		.limit(1)
-		.load::<models::TargetVersionMapping>(conn)
-		.map(|res| {
-		    let mut v: Vec<models::TargetVersionMapping> = res;
-		    if v.len() > 0 {
-			Some(v.swap_remove(0))
-		    } else {
-			None
-		    }
-		})
+    dsl::target_version_mappings
+        .filter(
+            dsl::target_id
+                .eq(target_id)
+                .and(dsl::current_version.eq(current_version)),
+        )
+        .limit(1)
+        .load::<models::TargetVersionMapping>(conn)
+        .map(|res| {
+            let mut v: Vec<models::TargetVersionMapping> = res;
+            if v.len() > 0 {
+                Some(v.swap_remove(0))
+            } else {
+                None
+            }
+        })
 }
+
+// pub fn get_associated_asset(
+//     conn: &diesel::SqliteConnection,
+//     mapping: models::TargetVersionMapping,
+// ) -> Result<models::Asset, Error> {
+//     use self::schema::{assets, targets};
+//     conn.transaction::<_, Error, _>(|| {
+//         let asset_version = match mapping.update_version {
+//             models::Version::Latest => {
+//                 let target: models::Target = targets::dsl::targets
+//                     .filter(targets::dsl::id.eq(mapping.target_id))
+//                     .first(conn)?;
+//                 target.latest.ok_or(Error::NotFound)?
+//             }
+//             models::Version::SemVer(ver) => ver,
+//         };
+//         let asset: models::Asset = assets::dsl::assets
+//             .filter(
+//                 assets::dsl::target_id
+//                     .eq(mapping.target_id)
+//                     .and(assets::dsl::version.eq(asset_version)),
+//             )
+//             .first(conn)?;
+//         Ok(asset)
+//     })
+// }
+
+// pub fn create_asset(conn: &diesel::SqliteConnection, asset: models::Asset) -> Result<(), Error> {
+//     use self::schema::assets;
+//     diesel::insert_into(assets::table)
+//         .values(asset)
+//         .execute(conn)
+//         .map(|_r| ())
+// }

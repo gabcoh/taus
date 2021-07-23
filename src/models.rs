@@ -2,15 +2,76 @@ use regex::Regex;
 use std::{fmt, str::FromStr};
 
 use diesel::{backend::Backend, deserialize::Queryable};
+use reqwest;
 use rocket::form::{self, FromFormField, ValueField};
 use rocket::serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use semver;
 
 use super::schema::{config, target_version_mappings, targets};
 
+#[derive(Clone, Debug, AsExpression)]
+#[sql_type = "diesel::sql_types::Text"]
+pub struct Url(pub reqwest::Url);
+impl Serialize for Url {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+	S: Serializer,
+    {
+	serializer.serialize_str(self.0.to_string().as_str())
+    }
+}
+impl<'de> Deserialize<'de> for Url {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+	D: Deserializer<'de>,
+    {
+	let s = String::deserialize(deserializer)?;
+	reqwest::Url::parse(s.as_str()).map_err(de::Error::custom).map(Url)
+    }
+}
+impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for Url
+where
+    DB: Backend,
+    String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
+{
+    fn to_sql<W: std::io::Write>(
+        &self,
+        out: &mut diesel::serialize::Output<W, DB>,
+    ) -> diesel::serialize::Result {
+        let s: String = self.clone().0.to_string();
+        s.to_sql(out)
+    }
+}
+impl<DB, ST> Queryable<ST, DB> for Url
+where
+    DB: Backend,
+    String: Queryable<ST, DB>,
+{
+    type Row = <String as Queryable<ST, DB>>::Row;
+
+    fn build(row: Self::Row) -> Self {
+        Url(
+            reqwest::Url::parse(String::build(row).as_str())
+                .expect("Parse Version from database"),
+        )
+    }
+}
+
 #[derive(PartialEq, Clone, Debug, Hash, Eq, AsExpression)]
 #[sql_type = "diesel::sql_types::Text"]
 pub struct SemVer(pub semver::Version);
+impl FromStr for SemVer {
+    type Err = std::io::Error;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        semver::Version::from_str(raw).map(SemVer).map_err(|raw| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Unable to parse '{}' as Version", raw),
+            )
+        })
+    }
+}
 impl<'de> Deserialize<'de> for SemVer {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -232,6 +293,7 @@ pub struct TargetVersionMapping {
     pub target_id: i32,
     pub current_version: SemVer,
     pub update_version: Version,
+    pub download_url: Url,
 }
 
 #[derive(Queryable, Serialize, Deserialize, Identifiable, Insertable, AsChangeset, Clone)]
@@ -241,6 +303,7 @@ pub struct Target {
     pub id: i32,
     pub target: String,
     pub regex: ValidRegex,
+    pub latest: Option<SemVer>,
 }
 
 #[derive(Insertable, Deserialize)]

@@ -2,22 +2,13 @@ use regex::RegexSet;
 use std::str::FromStr;
 
 use diesel::{Connection, SqliteConnection};
-use reqwest::Url;
 use rocket::serde::{de, Deserialize, Deserializer};
 use semver;
 
 use super::crud;
-use super::models::{SemVer, TargetVersionMapping};
+use super::models::{self, SemVer, TargetVersionMapping};
 
 // Note: Unfortuanately, it seems like we can't use the octocrab library for github because we have mismatching dependencies
-
-fn deserialize_url<'de, D>(deserializer: D) -> Result<Url, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Url::parse(s.as_str()).map_err(de::Error::custom)
-}
 fn deserialize_github_semver<'de, D>(deserializer: D) -> Result<SemVer, D::Error>
 where
     D: Deserializer<'de>,
@@ -42,16 +33,14 @@ where
 #[derive(Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct GithubAsset {
-    #[serde(deserialize_with = "deserialize_url")]
-    pub browser_download_url: Url,
+    pub browser_download_url: models::Url,
     pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct GithubRelease {
-    #[serde(deserialize_with = "deserialize_url")]
-    pub url: Url,
+    pub url: models::Url,
     #[serde(deserialize_with = "deserialize_github_semver")]
     pub tag_name: SemVer,
     pub draft: bool,
@@ -113,18 +102,28 @@ pub async fn discover_new_releases() -> Result<(), String> {
                             println!("None matched");
                         }
                         1 => {
-			    let matched_ind = matches.iter().next().unwrap().clone();
-			    let matched_targ = targets[matched_ind].clone();
-			    let maybe_existing = crud::get_mapping(&conn, matched_targ.id, rel.tag_name.clone()).map_err(|e| format!("Failed to get mapping: {}", e))?;
-			    if maybe_existing.is_none() {
-				    println!("We should insert a new target mapping using fill_version");
-				    crud::create_mapping(&conn,
-							 TargetVersionMapping {
-							     target_id: matched_targ.id,
-							     current_version: rel.tag_name.clone(),
-							     update_version: config.fill_version.clone()
-							 }).map_err(|e|format!("Failed to create mapping: {}", e))?;
-			    }
+                            let matched_ind = matches.iter().next().unwrap().clone();
+                            let matched_targ = targets[matched_ind].clone();
+                            let maybe_existing =
+                                crud::get_mapping(&conn, matched_targ.id, rel.tag_name.clone())
+                                    .map_err(|e| format!("Failed to get mapping: {}", e))?;
+                            // TODO Write this elsewhere also:
+                            // There must be a one to one rel between mappings and assets because each asset could make an update request. This suggests that it makes more sense to have mappings and assets be combined into the same thing
+                            if maybe_existing.is_none() {
+                                println!(
+                                    "We should insert a new target mapping using fill_version"
+                                );
+                                crud::create_mapping(
+                                    &conn,
+                                    TargetVersionMapping {
+                                        target_id: matched_targ.id,
+                                        current_version: rel.tag_name.clone(),
+                                        update_version: config.fill_version.clone(),
+                                        download_url: ass.browser_download_url.clone(),
+                                    },
+                                )
+                                .map_err(|e| format!("Failed to create mapping: {}", e))?;
+                            }
                         }
                         _ => {
                             println!("Multiple regexes matched");

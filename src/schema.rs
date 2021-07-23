@@ -13,6 +13,7 @@ table! {
         target_id -> Integer,
         current_version -> Text,
         update_version -> Text,
+        download_url -> Text,
     }
 }
 
@@ -21,6 +22,7 @@ table! {
         id -> Integer,
         target -> Text,
         regex -> Text,
+        latest -> Nullable<Text>,
     }
 }
 

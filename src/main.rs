@@ -7,19 +7,22 @@ extern crate diesel;
 use std::vec::Vec;
 
 use dotenv::dotenv;
-use rocket::http::Method;
+use rocket::http::{Method, Status};
 use rocket::serde::json::Json;
 use rocket::tokio;
 use rocket_cors::{AllowedHeaders, AllowedOrigins};
 use rocket_sync_db_pools::database;
 
-pub mod crud;
-pub mod github;
-pub mod models;
-pub mod schema;
+mod crud;
+mod github;
+mod models;
+mod schema;
+mod tauri;
 
 #[database("db")]
 struct DbConn(diesel::SqliteConnection);
+
+// TODO Convert all of these methods to return something like Result<Json, Status>
 
 #[get("/config")]
 async fn get_config(conn: DbConn) -> Json<models::Config> {
@@ -57,6 +60,21 @@ async fn get_mappings(conn: DbConn) -> Json<Vec<models::TargetVersionMapping>> {
             .expect("Get Mappings"),
     )
 }
+#[get("/tauri/<target>/<current_version>")]
+async fn tauri_update(
+    conn: DbConn,
+    target: String,
+    current_version: String,
+) -> Result<Json<tauri::UpdateAvailableResponse>, Status> {
+    let maybe_update = conn
+        .run(|c| tauri::tauri_produce_response(c, target, current_version))
+        .await
+        .map_err(|_e| Status::InternalServerError)?;
+    match maybe_update {
+        Some(u) => Ok(Json(u)),
+        None => Err(Status::NoContent),
+    }
+}
 
 #[launch]
 fn rocket() -> _ {
@@ -93,6 +111,7 @@ fn rocket() -> _ {
         .mount(
             "/",
             routes![
+                tauri_update,
                 create_target,
                 get_targets,
                 get_config,

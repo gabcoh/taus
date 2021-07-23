@@ -31,6 +31,16 @@ export default function Config() {
     return (
         <>
             <h3> Config </h3>
+            {!error && !config && (
+                <BS.Spinner animation="border" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                </BS.Spinner>
+            )}
+            {error && (
+                <BS.Alert variant="danger">
+                    Error connecting to backend: {`${error}`}
+                </BS.Alert>
+            )}
             {config && (
                 <Formik.Formik
                     initialValues={config}
@@ -43,7 +53,7 @@ export default function Config() {
                         });
                         setSubmitting(true);
                         updateConfig(values)
-			    .then(() => refresh())
+                            .then(() => refresh())
                             .catch((error) => {
                                 setError(error);
                             })

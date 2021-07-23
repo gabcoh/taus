@@ -105,9 +105,9 @@ const EditableCell = ({
     }, [initialValue]);
 
     if (column.readOnly) {
-	return value;
+        return value;
     } else {
-	return <input value={value} onChange={onChange} onBlur={onBlur} />;
+        return <input value={value} onChange={onChange} onBlur={onBlur} />;
     }
 };
 const defaultColumn = {
