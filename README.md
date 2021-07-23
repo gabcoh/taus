@@ -25,4 +25,4 @@ development server can be started with `yarn start`. Additionally `yarn format`
 will format most of the files with prettier.
 
 ## Project management
-See the project board.
+See the [project board](https://github.com/gabcoh/taus/projects/1).
